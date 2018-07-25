@@ -179,9 +179,15 @@ def inputs(eval_data):
     return images, labels
 
 
-def _initialize_ninja(var_name, initial):
-    return tf.get_variable(var_name, [192], initializer=tf.constant_initializer(initial),
+def _ninja_var(var_name, shape, initial):
+    return tf.get_variable(var_name, shape=shape, initializer=tf.constant_initializer(initial),
                            dtype=tf.float32)
+
+
+def _ninja_activation(input_mat, name):
+    alphas = _ninja_var('alphas', input_mat.get_shape(), 0.0001)
+    betas = _ninja_var('betas', input_mat.get_shape(), 0.2)
+    return tf.add(tf.multiply(input_mat, alphas), tf.nn.tanh(tf.multiply(input_mat, betas)), name)
 
 
 def inference(images):
@@ -204,7 +210,7 @@ def inference(images):
         conv = tf.nn.conv2d(images, kernel, [1, 1, 1, 1], padding='SAME')
         biases = _variable_on_cpu('biases', [64], tf.constant_initializer(0.0))
         pre_activation = tf.nn.bias_add(conv, biases)
-        conv1 = tf.nn.relu(pre_activation, name=scope.name)
+        conv1 = _ninja_activation(pre_activation, name=scope.name)
         _activation_summary(conv1)
 
     pool1 = tf.nn.max_pool(conv1, ksize=[1, 3, 3, 1], strides=[1, 2, 2, 1], padding='SAME',
@@ -217,7 +223,7 @@ def inference(images):
         conv = tf.nn.conv2d(norm1, kernel, [1, 1, 1, 1], padding='SAME')
         biases = _variable_on_cpu('biases', [64], tf.constant_initializer(0.1))
         pre_activation = tf.nn.bias_add(conv, biases)
-        conv2 = tf.nn.relu(pre_activation, name=scope.name)
+        conv2 = _ninja_activation(pre_activation, name=scope.name)
         _activation_summary(conv2)
     norm2 = tf.nn.lrn(conv2, 4, bias=1.0, alpha=0.001 / 9.0, beta=0.75, name='norm2')
     pool2 = tf.nn.max_pool(norm2, ksize=[1, 3, 3, 1], strides=[1, 2, 2, 1], padding='SAME',
@@ -230,18 +236,16 @@ def inference(images):
         dim = reshape.get_shape()[1].value
         weights = _variable_with_weight_decay('weights', shape=[dim, 384], stddev=0.04, wd=0.004)
         biases = _variable_on_cpu('biases', [384], tf.constant_initializer(0.1))
-        local3 = tf.nn.relu(tf.matmul(reshape, weights) + biases, name=scope.name)
+        mat_mul = tf.matmul(reshape, weights) + biases
+        local3 = _ninja_activation(mat_mul, name=scope.name)
         _activation_summary(local3)
 
     # local4
     with tf.variable_scope('local4') as scope:
         weights = _variable_with_weight_decay('weights', shape=[384, 192], stddev=0.04, wd=0.004)
         biases = _variable_on_cpu('biases', [192], tf.constant_initializer(0.1))
-        alphas = _initialize_ninja('alphas', 0.0001)
-        betas = _initialize_ninja('betas', 0.2)
-        mul_mat = tf.matmul(local3, weights) + biases
-        local4 = tf.multiply(mul_mat, alphas) + tf.nn.tanh(tf.multiply(mul_mat, betas),
-                                                           name=scope.name)
+        mat_mul = tf.matmul(local3, weights) + biases
+        local4 = _ninja_activation(mat_mul, scope.name)
         _activation_summary(local4)
 
     # linear layer(WX + b),
