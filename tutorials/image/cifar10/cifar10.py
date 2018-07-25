@@ -232,7 +232,8 @@ def inference(images):
     with tf.variable_scope('local4') as scope:
         weights = _variable_with_weight_decay('weights', shape=[384, 192], stddev=0.04, wd=0.004)
         biases = _variable_on_cpu('biases', [192], tf.constant_initializer(0.1))
-        local4 = tf.nn.relu(tf.matmul(local3, weights) + biases, name=scope.name)
+        local4 = (tf.matmul(local3, weights) + biases) / 1000.0 + tf.nn.tanh(
+            tf.matmul(local3, weights) + biases, name=scope.name)
         _activation_summary(local4)
 
     # linear layer(WX + b),
