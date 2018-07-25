@@ -179,6 +179,11 @@ def inputs(eval_data):
     return images, labels
 
 
+def _initialize_ninja(var_name, initial):
+    return tf.get_variable(var_name, [192], initializer=tf.constant_initializer(initial),
+                           dtype=tf.float32)
+
+
 def inference(images):
     """Build the CIFAR-10 model.
 
@@ -232,8 +237,11 @@ def inference(images):
     with tf.variable_scope('local4') as scope:
         weights = _variable_with_weight_decay('weights', shape=[384, 192], stddev=0.04, wd=0.004)
         biases = _variable_on_cpu('biases', [192], tf.constant_initializer(0.1))
-        local4 = (tf.matmul(local3, weights) + biases) / 1000.0 + tf.nn.tanh(
-            tf.matmul(local3, weights) + biases, name=scope.name)
+        alphas = _initialize_ninja('alphas', 0.0001)
+        betas = _initialize_ninja('betas', 0.2)
+        mul_mat = tf.matmul(local3, weights) + biases
+        local4 = tf.multiply(mul_mat, alphas) + tf.nn.tanh(tf.multiply(mul_mat, betas),
+                                                           name=scope.name)
         _activation_summary(local4)
 
     # linear layer(WX + b),
